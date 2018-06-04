@@ -17,8 +17,9 @@
 package kayak
 
 import (
-	"testing"
 	"log"
+	"testing"
+
 	"github.com/thunderdb/ThunderDB/crypto/hash"
 )
 

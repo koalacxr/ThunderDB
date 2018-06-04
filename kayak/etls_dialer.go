@@ -17,8 +17,8 @@
 package kayak
 
 import (
-	"net"
 	"context"
+	"net"
 )
 
 // ETLSDialer defines connection resolution feature of kayak

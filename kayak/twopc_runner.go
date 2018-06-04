@@ -21,7 +21,7 @@ type TwoPCRunner struct {
 }
 
 // Init implements Runner.Init.
-func (tpr *TwoPCRunner) Init(config *Config, peers *Peers, log LogStore, stable StableStore, dialer Dialer) error {
+func (tpr *TwoPCRunner) Init(config *Config, peers *Peers, logs LogStore, stable StableStore, dialer Dialer) error {
 	// TODO
 	return nil
 }
@@ -33,7 +33,7 @@ func (tpr *TwoPCRunner) UpdatePeers(peers *Peers) error {
 }
 
 // Process implements Runner.Process.
-func (tpr *TwoPCRunner) Process(log *Log) error {
+func (tpr *TwoPCRunner) Process(l *Log) error {
 	// TODO
 	return nil
 }

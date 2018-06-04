@@ -17,12 +17,16 @@
 package kayak
 
 import (
-	"github.com/thunderdb/ThunderDB/crypto/hash"
 	"bytes"
-	"encoding/binary"
-	"github.com/thunderdb/ThunderDB/crypto/signature"
-	"net"
 	"context"
+	"encoding/base64"
+	"encoding/binary"
+	"fmt"
+	"log"
+	"net"
+
+	"github.com/thunderdb/ThunderDB/crypto/hash"
+	"github.com/thunderdb/ThunderDB/crypto/signature"
 )
 
 // Log entries are replicated to all members of the Raft cluster
@@ -78,10 +82,10 @@ type LogStore interface {
 	LastIndex() (uint64, error)
 
 	// GetLog gets a log entry at a given index.
-	GetLog(index uint64, log *Log) error
+	GetLog(index uint64, l *Log) error
 
 	// StoreLog stores a log entry.
-	StoreLog(log *Log) error
+	StoreLog(l *Log) error
 
 	// StoreLogs stores multiple log entries.
 	StoreLogs(logs []*Log) error
@@ -145,11 +149,29 @@ type Server struct {
 	PubKey *signature.PublicKey
 }
 
+func (s *Server) String() string {
+	return fmt.Sprintf("Server id:%s role:%s address:%s pubKey:%s",
+		s.ID, s.Role, s.Address,
+		base64.StdEncoding.EncodeToString(s.PubKey.Serialize()))
+}
+
+// Serialize payload to bytes
+func (s *Server) Serialize() []byte {
+	buffer := new(bytes.Buffer)
+	binary.Write(buffer, binary.LittleEndian, s.Role)
+	binary.Write(buffer, binary.LittleEndian, s.ID)
+	binary.Write(buffer, binary.LittleEndian, s.Address)
+	buffer.Write(s.PubKey.Serialize())
+
+	return buffer.Bytes()
+}
+
 // Peers defines peer configuration.
 type Peers struct {
 	Term      uint64
-	Leader    Server
-	Servers   []Server
+	Leader    *Server
+	Servers   []*Server
+	PubKey    *signature.PublicKey
 	Signature *signature.Signature
 }
 
@@ -162,10 +184,56 @@ func (c *Peers) Clone() (copy Peers) {
 	return
 }
 
+func (c *Peers) getBytes() []byte {
+	buffer := new(bytes.Buffer)
+	binary.Write(buffer, binary.LittleEndian, c.Term)
+	binary.Write(buffer, binary.LittleEndian, c.Leader.Serialize())
+	for _, s := range c.Servers {
+		binary.Write(buffer, binary.LittleEndian, s.Serialize())
+	}
+	return buffer.Bytes()
+}
+
+// Sign generates signature
+func (c *Peers) Sign(signer *signature.PrivateKey) error {
+	sig, err := signer.Sign(c.getBytes())
+
+	if err != nil {
+		return fmt.Errorf("sign peer configuration failed: %s", err.Error())
+	}
+
+	c.Signature = sig
+
+	return nil
+}
+
+// Verify verify signature
+func (c *Peers) Verify() bool {
+	return c.Signature.Verify(c.getBytes(), c.PubKey)
+}
+
+func (c *Peers) String() string {
+	return fmt.Sprintf("Peers term:%v nodesCnt:%v leader:%s signature:%s",
+		c.Term, len(c.Servers), c.Leader.ID,
+		base64.StdEncoding.EncodeToString(c.Signature.Serialize()))
+}
+
 // Config defines minimal configuration fields for consensus runner.
 type Config struct {
-	// The unique ID for this server across all time.
+	// RootDir is the root dir for runtime
+	RootDir string
+
+	// LocalID is the unique ID for this server across all time.
 	LocalID ServerID
+
+	// Runner defines the runner type
+	Runner Runner
+
+	// Dialer defines the dialer type
+	Dialer Dialer
+
+	// Logger is the logger
+	Logger log.Logger
 }
 
 // Dialer adapter for abstraction.
@@ -180,14 +248,14 @@ type Dialer interface {
 // Runner adapter for different consensus protocols including Eventual Consistency/2PC/3PC.
 type Runner interface {
 	// Init defines setup logic.
-	Init(config *Config, peers *Peers, log LogStore, stable StableStore, dialer Dialer) error
+	Init(config *Config, peers *Peers, logs LogStore, stable StableStore, dialer Dialer) error
 
 	// UpdatePeers defines peer configuration update logic.
 	UpdatePeers(peers *Peers) error
 
 	// Process defines log replication and log commit logic
 	// and should be called by Leader role only.
-	Process(log *Log) error
+	Process(l *Log) error
 
 	// Shutdown defines destruct logic.
 	Shutdown() error
